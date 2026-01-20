@@ -4,9 +4,12 @@ venv/
 .env
 .git/
 .vscode/
-database/
-recordings/
-models/
 tests/assets/
 logs/
 *.log
+
+# Data persistence (ignore local state)
+recordings/*
+models/*
+database/*.db
+database/chroma/
