@@ -1,0 +1,23 @@
+# Core AI
+faster-whisper
+llama-cpp-python
+
+webrtcvad-wheels
+
+# API & Streaming
+fastapi
+uvicorn
+pydantic
+python-dotenv
+websockets
+
+# Task Queue
+redis
+celery
+
+# Audio
+pyaudio
+
+# Logic
+scipy
+numpy

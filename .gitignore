@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Echo Data
+models/
+recordings/
+database/
+*.db
+*.log
+logs/
+
+# Test Assets
+tests/assets/test_record.wav
+
+# IDE
+.vscode/
+.idea/
+.antigravity/

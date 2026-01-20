@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  echo-redis:
+    image: redis:alpine
+    container_name: echo-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - echo-net
+
+  echo-api:
+    build: .
+    container_name: echo-api
+    command: python server.py --port 8080
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_URL=redis://echo-redis:6379/0
+      - ECHO_API_KEY=echo_secret_key
+    volumes:
+      - ./database:/app/database
+      - ./recordings:/app/recordings
+      - ./models:/app/models
+    depends_on:
+      - echo-redis
+    networks:
+      - echo-net
+
+  worker-stt:
+    build: .
+    container_name: echo-worker-stt
+    # Run the worker directly
+    command: celery -A core.celery_app worker -l INFO -c 1 -n worker_stt@%h
+    environment:
+      - REDIS_URL=redis://echo-redis:6379/0
+    volumes:
+      - ./database:/app/database
+      - ./recordings:/app/recordings
+      - ./models:/app/models
+    depends_on:
+      - echo-redis
+    networks:
+      - echo-net
+
+  worker-llm:
+    build: .
+    container_name: echo-worker-llm
+    command: celery -A core.celery_app worker -l INFO -c 1 -n worker_llm@%h
+    environment:
+      - REDIS_URL=redis://echo-redis:6379/0
+    volumes:
+      - ./database:/app/database
+      - ./models:/app/models
+    depends_on:
+      - echo-redis
+    networks:
+      - echo-net
+
+networks:
+  echo-net:
+    driver: bridge

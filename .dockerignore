@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+venv/
+.env
+.git/
+.vscode/
+database/
+recordings/
+models/
+tests/assets/
+logs/
+*.log
