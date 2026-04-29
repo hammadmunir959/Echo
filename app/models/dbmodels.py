@@ -1,7 +1,7 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import String, Float, JSON, DateTime, Integer, func, ForeignKey
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict
 
 class Base(DeclarativeBase):
     pass
@@ -52,3 +52,7 @@ class Transcript(Base):
     
     language: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     language_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    
+    # Post-processing
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    processed_json: Mapped[Optional[Dict]] = mapped_column(JSON, nullable=True)

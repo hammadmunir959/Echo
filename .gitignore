@@ -16,7 +16,7 @@ htmlcov/
 .env
 venv/
 recording/
-
+docs/
 # Data and Logs
 data/
 logs/

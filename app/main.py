@@ -7,7 +7,9 @@ from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.db.database import init_db
 from app.api.router import api_router
+from app.core.llm_client import LlamaClient
 from app.services.transcription_service import TranscriptionService
+from app.services.post_processing_service import PostProcessingService
 from app.services.pipeline import pipeline_worker
 from app.utils.event_bus import event_bus
 
@@ -29,12 +31,11 @@ async def lifespan(app: FastAPI):
     init_db()
     
     # 3. AI Model Readiness
-    transcriber = TranscriptionService(
-        model_name=settings.whisper_model,
-        models_dir=settings.models_dir
-    )
-    # Run model verification in a thread to keep the event loop from hanging
-    # while potentially downloading large files.
+    transcriber = TranscriptionService(settings)
+    llm_client = LlamaClient(settings)
+    post_processor = PostProcessingService(settings, llm_client)
+
+    # Run model verification in a thread
     logger.info("Performing AI model readiness check...")
     await loop.run_in_executor(None, transcriber.ensure_model_ready)
     
@@ -45,7 +46,7 @@ async def lifespan(app: FastAPI):
     # Start N workers as configured
     logger.info(f"Starting {settings.transcription_workers} transcription workers...")
     workers = [
-        asyncio.create_task(pipeline_worker(queue, settings, transcriber))
+        asyncio.create_task(pipeline_worker(queue, settings, transcriber, post_processor))
         for _ in range(settings.transcription_workers)
     ]
     

@@ -1,0 +1,11 @@
+root ::= object
+object ::= "{" space s "," space i "," space u "," space e space "}"
+s ::= "\"summary\":" space string
+i ::= "\"incident_type\":" space string
+u ::= "\"urgency\":" space urgency
+e ::= "\"entities\":" space es
+urgency ::= "\"low\"" | "\"medium\"" | "\"high\"" | "\"critical\""
+es ::= "[" space (entity ("," space entity)*)? space "]"
+entity ::= "{" space "\"type\":" space string "," space "\"value\":" space string space "}"
+string ::= "\"" ([^"\\\n\r]* ("\\" [^\n\r] [^"\\\n\r]*)*) "\""
+space ::= " "*

@@ -11,6 +11,7 @@ from app.core.config import Settings
 from app.db.database import SessionLocal
 from app.models.dbmodels import Organization, Station, Node, Transcript
 from app.services.transcription_service import TranscriptionService
+from app.services.post_processing_service import PostProcessingService
 from app.utils.event_bus import event_bus
 
 logger = structlog.get_logger("pipeline")
@@ -26,7 +27,8 @@ class TranscriptionJob(NamedTuple):
 async def pipeline_worker(
     queue: asyncio.Queue,
     settings: Settings,
-    transcription_service: TranscriptionService
+    transcription_service: TranscriptionService,
+    post_processor: PostProcessingService
 ):
     loop = asyncio.get_event_loop()
     logger.info("Pipeline worker started")
@@ -90,6 +92,16 @@ async def pipeline_worker(
                     language_probability=result.language_probability
                 )
                 session.add(transcript)
+                session.flush() # Get ID before commit if needed
+                transcript_id = transcript.id
+
+                # Post-processing (LLM analysis)
+                logger.info("Starting LLM post-processing", transcript_id=transcript_id)
+                post_processed_result = await post_processor.process_transcript(result.text)
+                
+                transcript.processed_json = post_processed_result
+                transcript.processed_at = func.now()
+                
                 session.commit()
                 transcript_id = transcript.id
 

@@ -15,11 +15,12 @@ class TranscriptResult(NamedTuple):
     duration: float
 
 class TranscriptionService:
-    def __init__(self, model_name: str, models_dir: Path, device: str = "cpu", compute_type: str = "int8"):
-        self.model_name = model_name
-        self.models_dir = models_dir
-        self.device = device
-        self.compute_type = compute_type
+    def __init__(self, settings: Any):
+        self.settings = settings
+        self.model_name = settings.whisper_model
+        self.models_dir = settings.models_dir
+        self.device = settings.device
+        self.compute_type = settings.compute_type
 
     def ensure_model_ready(self):
         """
@@ -29,8 +30,8 @@ class TranscriptionService:
         logger.info("Checking Whisper model for readiness", model=self.model_name, dir=str(self.models_dir))
         _ = WhisperModel(
             self.model_name,
-            device="cpu", 
-            compute_type="int8",
+            device=self.device, 
+            compute_type=self.compute_type,
             download_root=str(self.models_dir),
             local_files_only=True
         )
@@ -58,8 +59,12 @@ class TranscriptionService:
         
         segments, info = model.transcribe(
             audio_path, 
-            beam_size=5, 
-            word_timestamps=True
+            beam_size=self.settings.beam_size, 
+            word_timestamps=self.settings.word_timestamps,
+            language=self.settings.whisper_language,
+            initial_prompt=self.settings.initial_prompt,
+            vad_filter=self.settings.vad_filter,
+            vad_parameters={"min_silence_duration_ms": self.settings.vad_min_silence_duration_ms}
         )
         
         full_text = []

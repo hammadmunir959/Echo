@@ -17,6 +17,23 @@ class Settings(BaseSettings):
     # Whisper
     whisper_model: str = "base"           # tiny / base / small / medium
     transcription_workers: int = 4        # concurrent Whisper threads (tune per RAM)
+    beam_size: int = 5
+    compute_type: str = "int8"            # int8 / float16 / bfloat16
+    device: str = "cpu"                   # cpu / cuda
+    
+    # Advanced Transcription Options
+    whisper_language: str | None = None   # Hardcode to "en" for speed/accuracy if known
+    initial_prompt: str | None = None     # Use for context/jargon
+    vad_filter: bool = True               # Enable Voice Activity Detection
+    vad_min_silence_duration_ms: int = 500
+    word_timestamps: bool = True
+
+    # LLM Settings (llama.cpp)
+    llm_model_path: Path | None = None    # Path to GGUF model
+    llm_n_ctx: int = 4096
+    llm_n_gpu_layers: int = 0             # Set > 0 for GPU offloading
+    llm_temperature: float = 0.1
+    llm_max_tokens: int = 512
 
     # Ingest limits
     max_audio_duration_seconds: int = 60
