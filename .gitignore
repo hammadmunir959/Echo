@@ -15,6 +15,7 @@ htmlcov/
 # Environment Variables
 .env
 venv/
+recording/
 
 # Data and Logs
 data/
