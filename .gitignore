@@ -1,22 +1,32 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
+# Virtual Environment
 venv/
+.venv/
+env/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment Variables
 .env
+venv/
 
-# Echo Data
-models/
-recordings/
-database/
-*.db
-*.log
+# Data and Logs
+data/
 logs/
+assets/
 
-# Test Assets
-tests/assets/test_record.wav
-
-# IDE
+# IDEs
 .vscode/
 .idea/
-.antigravity/
+
+# Testing (as requested by user)
+tests/
+
+# Docker
+.dockerignore

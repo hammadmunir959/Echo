@@ -1,139 +1,117 @@
-# Project Echo: Distributed Meeting Intelligence System
+# Echo HQ — Dispatch Transcription System 
 
-### Tech Stack: Python | FastAPI | Whisper | Qwen2 | Docker | Redis | ChromaDB | SQLite
+**Echo HQ** is a high-performance, production-grade transcription server designed for organizations operating complex multi-node radio/dispatch networks (Police, Rescue, Edhi, etc.).
 
-Project Echo is a high-performance, privacy-centric meeting assistant designed for fully local execution. It utilizes a distributed architecture to decouple audio capture from intensive AI inference, ensuring low-latency processing even on hardware with limited resources.
+It establishes a hierarchical monitoring system where field nodes (walkie-talkies, satellite phones) transmit audio chunks to a central Headquarters. These chunks are transcribed in real-time using a local, thread-safe AI pipeline, tagged with organization-level metadata, and stored for instant search and audit.
 
----
+## Key Features
+- **Hierarchical Governance:** Multi-tenant support with a tiered structure: `Organization` ⮕ `Station` ⮕ `Node`.
+- **Parallel AI Pipeline:** Uses an `asyncio.Queue` distributed across a thread-local pool of **Faster-Whisper** workers for maximum CPU utilization.
+- **Micro-batch Ingestion:** Handled via REST API with automated validation, storage, and background processing.
+- **Real-time SSE Stream:** Operators receive live transcripts via Server-Sent Events (SSE) with millisecond latency.
+- **Enterprise Search:** Fuzzy search (ILIKE) and tiered retrieval by Organization, Station, or Node.
+- **Robust Infrastructure:** PostgreSQL persistence, structured logging (`structlog`), and FastAPI lifespan management for AI model readiness.
 
-## System Design and Architecture
+## Pipeline Architecture
 
-Echo is engineered as a distributed, event-driven cluster. The system decouples the capture phase from the inference phase, allowing it to scale across multiple nodes while maintaining a minimal footprint on the recording hardware.
+Echo HQ uses a non-blocking, producer-consumer architecture to handle high-concurrency audio ingestion and processing.
 
-### System Architecture Overview
 ```mermaid
 graph TD
-    subgraph "Hearing Layer"
-        A[Mic Input] -->|RMS Gating| B[VAD Filter]
-        B -->|Active Speech| C[WAV Chunk Writer]
-        C -->|Task Enqueued| D[Redis Broker]
-    end
-    
-    subgraph "Processing Layer"
-        D -->|Task: Transcribe| E[Whisper Worker]
-        E -->|Text + Timestamps| F[SQL Persistence]
-        E -->|Trigger Summary| D
-        D -->|Task: Summarize| G[LLM Worker]
-        G -->|Filtered JSON| F
-    end
-    
-    subgraph "Intelligence Layer"
-        G -->|Embeddings| H[ChromaDB RAG]
-        F -->|Search Index| I[SQLite FTS5]
+    subgraph "Ingestion (Producer)"
+        N[Field Node] -->|POST /audio| API[FastAPI Ingest]
+        API --> VAL[Audio Validator]
+        VAL --> STO[Storage Service]
+        STO -->|Enqueue Job| Q[asyncio.Queue]
     end
 
-    subgraph "Delivery Layer"
-        I --> J[API Gateway]
-        H --> J
-        J -->|WebSocket| K[Live UI Update]
+    subgraph "Transcription (Consumer Pool)"
+        Q --> W1["Worker 1 (Thread)"]
+        Q --> W2["Worker 2 (Thread)"]
+        QN["Worker N (Thread)"]
+        
+        W1 & W2 & QN --> BUS[Internal Event Bus]
+        W1 & W2 & QN --> DB[(PostgreSQL)]
+    end
+
+    subgraph "Egress (Real-time)"
+        BUS --> SSE[SSE /api/v1/stream]
+        SSE --> DASH[HQ Dashboards]
     end
 ```
 
----
+### End-to-End Data Flow
 
-## Technical Workflow
+1.  **Ingestion:** Field nodes send audio chunks (60s max) via multipart FORM data. 
+2.  **Validation & Storage:** The `AudioValidator` checks MIME types and bitrates. Validated audio is persisted to disk by the `StorageService`, generating a unique file path.
+3.  **Queuing:** A `TranscriptionJob` metadata object is pushed into a global `asyncio.Queue`.
+4.  **Async Orchestration:** The `pipeline_worker` pops jobs from the queue. Since transcription is CPU-intensive, it offloads the work to a thread pool using `loop.run_in_executor`.
+5.  **AI Transcription:** The `TranscriptionService` invokes **Faster-Whisper**. 
+    > [!NOTE]
+    > **Concurrency Management:** To avoid GIL contention and model loading overhead, each worker thread maintains its own **thread-local instance** of the Whisper model.
+6.  **Persistence:** The worker ensures the Organization/Station/Node hierarchy exists in PostgreSQL (Upsert) before saving the transcript with word-level timestamps.
+7.  **Broadcast:** The finished transcript is published to the `event_bus`, which triggers an SSE broadcast to all connected operators.
 
-The following sequence diagram details the lifecycle of a captured audio segment within the Echo ecosystem:
+### Transcription Service (Under the Hood)
+The core AI logic is powered by `faster-whisper`, a re-implementation of OpenAI's Whisper using CTranslate2.
+- **Model Quantization:** Uses `int8` quantization for efficient CPU inference.
+- **Beam Search:** Configured with `beam_size=5` for a balance between speed and accuracy.
+- **Word-Level Timing:** Enabled to allow operators to jump to specific points in the audio during review.
 
-```mermaid
-sequenceDiagram
-    participant Mic as User Microphone
-    participant VAD as RMS/WebRTC VAD
-    participant Redis as Redis Queue
-    participant STT as Whisper Worker
-    participant DB as SQLite (WAL)
-    participant LLM as Qwen Worker
-    participant RAG as ChromaDB
+## API Quick Start
 
-    Mic->>VAD: Audio Stream
-    VAD->>VAD: Buffer 1500ms Pre-roll
-    VAD-->>VAD: Noise Threshold Met
-    VAD->>Redis: task_transcribe(chunk_path)
-    
-    Redis->>STT: Pull Transcription Task
-    STT->>STT: faster-whisper (INT8)
-    STT->>DB: INSERT into transcripts
-    STT->>Redis: task_summarize(transcript_id)
-
-    Redis->>LLM: Pull Summarization Task
-    LLM->>LLM: GBNF Grammar Inference
-    LLM->>DB: INSERT into action_items
-    LLM->>RAG: Index Semantic Vector
-    
-    DB->>DB: Update FTS5 Search Index
+### 1. Ingest Audio
+Nodes transmit chunks (typically 30-60s) with hierarchical metadata:
+```bash
+curl -X POST http://hq-server:8080/api/v1/ingest/audio \
+  -H "X-API-Key: your_echo_key" \
+  -F "audio=@chunk.wav" \
+  -F "node_id=UNIT-7" \
+  -F "station_id=SOUTH-STATION"
 ```
 
----
+### 2. Search & Retrieval
+Filter by organization, station, or perform fuzzy searches:
+```bash
+# Search transcripts by content
+curl "http://hq-server:8080/api/v1/transcripts/search?q=emergency" \
+  -H "X-API-Key: your_echo_key"
 
-## Core Features and Implementation
+# List transcripts for a specific station
+curl "http://hq-server:8080/api/v1/transcripts/station/SOUTH-STATION" \
+  -H "X-API-Key: your_echo_key"
+```
 
-### Optimized Audio Gating
-Echo implements a dual-stage voice activity detection system to ensure high-quality captures while reducing wasted compute.
-*   **RMS Energy Gating**: Initial filtering using RMS power levels to ignore background hum and static.
-*   **WebRTC VAD**: Precision cadence detection to identify human speech patterns.
-*   **Temporal Buffering**: Implementation of 1500ms pre-roll and 2000ms post-roll buffers to prevent word clipping.
+### 3. Real-time Monitoring
+Connect to the stream for instant dispatch updates:
+```bash
+curl -N http://hq-server:8080/api/v1/stream \
+  -H "X-API-Key: your_echo_key"
+```
 
-### Distributed AI Inference
-*   **Speech-to-Text**: Integration of faster-whisper (Base model) optimized for CPU-only environments.
-*   **Action Item Extraction**: Utilization of Qwen2-0.5B (GGUF) with strict GBNF grammar enforcement to guarantee structured JSON output.
-*   **Metadata Lineage**: Every generated action item is linked to its source transcript ID and original audio timestamp for full auditability.
+## Setup & Deployment
 
-### Semantic Memory and Search
-*   **Full-Text Search (FTS5)**: Integrated SQLite search engine for rapid keyword retrieval.
-*   **RAG (Retrieval Augmented Generation)**: Semantic memory layer using ChromaDB, allowing for conceptual queries that go beyond simple keyword matching.
+### Local Development
+1. Install dependencies: `pip install -r requirements.txt`
+2. Configure `.env` (refer to `.env.example`):
+   ```bash
+   ECHO_API_KEY=your_key
+   ECHO_POSTGRES_DSN=postgresql://user:pass@localhost/echo_db
+   ```
+3. Run the server: `uvicorn app.main:app --reload --port 8080`
 
-### Resilience and Scalability
-*   **Fault Isolation**: Decoupled deployment using Docker Compose; failures in the LLM worker do not impact the STT or API layers.
-*   **Persistence Layer**: SQLite configured with Write-Ahead-Logging (WAL) for high concurrency.
-*   **Task Reliability**: Redis-backed task queue with visibility timeouts to ensure zero data loss during process crashes.
-
----
-
-## Deployment and Usage
-
-### Containerized Deployment
-Deploy the entire cluster including Redis, API Gateway, and specialized workers:
+### Docker Deployment
 ```bash
 docker-compose up -d
 ```
 
-### Interactive Test Mode
-Run the real-time AI engine directly in your terminal for immediate verification:
-```bash
-python3 runners/interactive_test.py
-```
-*Note: Type /voice to trigger a 5-second capture.*
-
-### API Interface
-The Echo API is secured via X-API-Key and provides the following v1 endpoints:
-*   **Session Control**: POST /api/v1/control/start
-*   **Data Retrieval**: GET /api/v1/data/transcripts
-*   **Keyword Search**: GET /api/v1/data/search?q=query
-*   **Semantic Query (RAG)**: POST /api/v1/rag/ask
-*   **Real-time Streaming**: WS /api/v1/stream/meetings/{id}
-
----
-
-## Performance Evaluation
-
-| Metric | Result | Environment |
-| :--- | :--- | :--- |
-| **STT Real-Time Factor** | 0.4x | Standard CPU |
-| **LLM Inference Speed** | 12 tokens/sec | Standard CPU |
-| **VAD Latency** | < 10ms | Real-time |
-| **RAM Footprint** | ~1.2 GB | Peak Usage |
-
----
-
-Project Echo - Advanced Agentic Engineering.
-Developed by Hammad Munir.
+## Configuration (Environment Variables)
+All settings use the `ECHO_` prefix:
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ECHO_POSTGRES_DSN` | PostgreSQL connection string | (Required) |
+| `ECHO_WHISPER_MODEL` | AI model size (`tiny`, `base`, `small`, `medium`) | `base` |
+| `ECHO_TRANSCRIPTION_WORKERS` | Parallel Whisper threads | `4` |
+| `ECHO_API_KEY` | Security key for all requests | `echo_hq_key` |
+| `ECHO_LOG_LEVEL` | Logging verbosity (`INFO`, `DEBUG`) | `INFO` |
+| `ECHO_AUDIO_DIR` | Path to store ingested audio | `data/audio` |

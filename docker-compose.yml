@@ -1,62 +1,44 @@
 version: '3.8'
 
 services:
-  echo-redis:
-    image: redis:alpine
-    container_name: echo-redis
+  postgres:
+    image: postgres:15-alpine
+    container_name: echo-postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: echo
     ports:
-      - "6379:6379"
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
     networks:
       - echo-net
 
-  echo-api:
+  echo-hq:
     build: .
-    container_name: echo-api
-    command: python server.py --port 8080
+    container_name: echo-hq
     ports:
       - "8080:8080"
     environment:
-      - REDIS_URL=redis://echo-redis:6379/0
-      - ECHO_API_KEY=echo_secret_key
+      - ECHO_API_KEY=echo_hq_key
+      - ECHO_POSTGRES_DSN=postgresql://user:pass@postgres:5432/echo
+      - ECHO_WHISPER_MODEL=base
+      - ECHO_TRANSCRIPTION_WORKERS=4
     volumes:
-      - ./database:/app/database
-      - ./recordings:/app/recordings
-      - ./models:/app/models
+      - ./data:/app/data
+      - ./assets:/app/assets
+      - ./logs:/app/logs
+    restart: unless-stopped
     depends_on:
-      - echo-redis
-    networks:
-      - echo-net
-
-  worker-stt:
-    build: .
-    container_name: echo-worker-stt
-    # Run the worker directly
-    command: celery -A core.celery_app worker -l INFO -c 1 -n worker_stt@%h
-    environment:
-      - REDIS_URL=redis://echo-redis:6379/0
-    volumes:
-      - ./database:/app/database
-      - ./recordings:/app/recordings
-      - ./models:/app/models
-    depends_on:
-      - echo-redis
-    networks:
-      - echo-net
-
-  worker-llm:
-    build: .
-    container_name: echo-worker-llm
-    command: celery -A core.celery_app worker -l INFO -c 1 -n worker_llm@%h
-    environment:
-      - REDIS_URL=redis://echo-redis:6379/0
-    volumes:
-      - ./database:/app/database
-      - ./models:/app/models
-    depends_on:
-      - echo-redis
+      - postgres
     networks:
       - echo-net
 
 networks:
   echo-net:
     driver: bridge
+
+volumes:
+  postgres_data:

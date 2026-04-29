@@ -1,23 +1,24 @@
 # Core AI
 faster-whisper
-llama-cpp-python
 
-webrtcvad-wheels
+# Audio Validation
+soundfile
 
-# API & Streaming
+# API
 fastapi
-uvicorn
-pydantic
+uvicorn[standard]
+python-multipart
+pydantic-settings
 python-dotenv
-websockets
 
-# Task Queue
-redis
-celery
+# Database & Logging
+sqlalchemy
+psycopg2-binary
+structlog
 
-# Audio
-pyaudio
-
-# Logic
-scipy
+# Utils
 numpy
+scipy
+pynput
+sounddevice
+requests
